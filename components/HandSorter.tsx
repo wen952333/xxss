@@ -137,15 +137,19 @@ export const HandSorter: React.FC<HandSorterProps> = ({ cards, onConfirm, onExit
            </div>
         )}
 
-        <div className="flex justify-start items-center -space-x-8 md:-space-x-12 lg:-space-x-16 h-full w-full z-10 overflow-visible py-2">
+        {/* 
+            Spacing Updated: 
+            -space-x-12 (mobile) and -space-x-24 (desktop) to cover ~50% of the card 
+        */}
+        <div className="flex justify-start items-center -space-x-12 md:-space-x-24 h-full w-full z-10 overflow-visible py-2 pl-2">
           {cardsArr.map((card) => (
             <CardComponent 
               key={card.id} 
               card={card} 
               selected={selectedCardIds.has(card.id)}
               onClick={(e) => toggleCardSelection(e as any, card.id)}
-              // Reduced height to 76% (approx 20% smaller than 96%)
-              className="h-[76%] aspect-[5/7] shadow-2xl text-lg md:text-4xl"
+              // Height constrained: h-[70%] with a max-h limit to ensure Front/Middle/Back look identical
+              className="h-[70%] max-h-[140px] aspect-[5/7] shadow-2xl text-lg md:text-3xl"
             />
           ))}
         </div>
@@ -160,7 +164,7 @@ export const HandSorter: React.FC<HandSorterProps> = ({ cards, onConfirm, onExit
   return (
     <div className="flex flex-col h-full w-full relative">
       
-      {/* Top Buttons - Short names as requested */}
+      {/* Top Buttons */}
       <div className="shrink-0 w-full bg-emerald-900 border-b-0 p-2 flex justify-center gap-3 shadow-lg z-30">
         <button 
           onClick={handleSubmit}
