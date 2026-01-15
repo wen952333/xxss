@@ -144,7 +144,8 @@ export const HandSorter: React.FC<HandSorterProps> = ({ cards, onConfirm, onExit
               card={card} 
               selected={selectedCardIds.has(card.id)}
               onClick={(e) => toggleCardSelection(e as any, card.id)}
-              className="h-[96%] aspect-[5/7] shadow-2xl text-lg md:text-4xl"
+              // Reduced height to 76% (approx 20% smaller than 96%)
+              className="h-[76%] aspect-[5/7] shadow-2xl text-lg md:text-4xl"
             />
           ))}
         </div>

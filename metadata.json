@@ -1,0 +1,5 @@
+{
+  "name": "十三水 (PWA)",
+  "description": "经典十三水（Chinese Poker）单机版。支持 PWA 离线运行，提供流畅的原生应用体验。",
+  "requestFramePermissions": []
+}

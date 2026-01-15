@@ -88,7 +88,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       
       const user = await env.DB.prepare(
         "SELECT id, phone, nickname, credits FROM users WHERE phone = ? AND password = ?"
-      ).bind(phone, hashedPassword).first();
+      ).bind(phone, hashedPassword).first<UserRow>();
 
       if (user) {
         return new Response(JSON.stringify({ success: true, user }), { status: 200 });
@@ -102,7 +102,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       const { phone } = body;
       const user = await env.DB.prepare(
         "SELECT id, phone, nickname FROM users WHERE phone = ?"
-      ).bind(phone).first();
+      ).bind(phone).first<UserRow>();
       
       if (user) {
         return new Response(JSON.stringify({ success: true, user }), { status: 200 });
@@ -149,7 +149,7 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
     // --- REFRESH ---
     if (action === 'refresh') {
         const { phone } = body;
-        const user = await env.DB.prepare("SELECT id, phone, nickname, credits FROM users WHERE phone = ?").bind(phone).first();
+        const user = await env.DB.prepare("SELECT id, phone, nickname, credits FROM users WHERE phone = ?").bind(phone).first<UserRow>();
         if (user) {
             return new Response(JSON.stringify({ success: true, user }), { status: 200 });
         }

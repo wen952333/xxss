@@ -13,9 +13,12 @@ interface CardProps {
 
 export const CardComponent: React.FC<CardProps> = ({ card, onClick, selected, small, hidden, className }) => {
   // Determine sizing classes
+  // Reduced by ~20%: 
+  // Default: w-20(5rem)->w-16(4rem), h-28(7rem)->h-[90px]
+  // Desktop: w-28(7rem)->w-[90px], h-40(10rem)->h-32(8rem)
   const sizeClasses = small 
-    ? 'w-8 h-12 text-xs' 
-    : (className || 'w-20 h-28 md:w-28 md:h-40 text-lg md:text-2xl');
+    ? 'w-6 h-10 text-[10px]' 
+    : (className || 'w-16 h-[90px] md:w-[90px] md:h-32 text-base md:text-xl');
 
   // Handle Card Back (Hidden State)
   if (hidden) {
