@@ -37,3 +37,11 @@ export interface Player {
   formation?: HandFormation; // The organized hand
   score: number;
 }
+
+export interface User {
+  id: number;
+  phone: string;
+  nickname: string;
+  credits: number;
+  token?: string; // Simple session token implementation
+}
