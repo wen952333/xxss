@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useEffect } from 'react';
 import { GamePhase, Player, HandFormation, Card, Seat } from '../types';
 import { getSmartRecommendations } from '../utils/gameLogic';
@@ -15,21 +14,25 @@ export const useGame = () => {
   const [players, setPlayers] = useState<Player[]>([]);
   const [userPlayerId] = useState('user-1');
   const [currentSeat, setCurrentSeat] = useState<Seat | null>(null);
+  const [currentRoomId, setCurrentRoomId] = useState<number>(1);
   const [currentGameId, setCurrentGameId] = useState<number>(0);
 
-  const startNewGame = useCallback(async (selectedSeat?: Seat) => {
+  const startNewGame = useCallback(async (selectedSeat?: Seat, selectedRoomId?: number) => {
     // If starting fresh from Lobby
     if (selectedSeat) {
         setCurrentSeat(selectedSeat);
+        if (selectedRoomId) setCurrentRoomId(selectedRoomId);
         
+        const roomIdToUse = selectedRoomId || currentRoomId;
+
         // 1. Init Stage (Refill inventory, shuffle sequence)
         try {
             await fetch('/api/game-stage', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ action: 'start_stage', userId: 123, roomId: 1, seat: selectedSeat })
+                body: JSON.stringify({ action: 'start_stage', userId: 123, roomId: roomIdToUse, seat: selectedSeat })
             });
-        } catch(e) { console.error(e); }
+        } catch(e) { console.error("Start stage error:", e); }
     }
 
     setGameState(GamePhase.Dealing);
@@ -39,8 +42,13 @@ export const useGame = () => {
         const res = await fetch('/api/game-stage', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ action: 'get_hand', userId: 123, seat: selectedSeat || currentSeat })
+            body: JSON.stringify({ action: 'get_hand', userId: 123, seat: selectedSeat || currentSeat, roomId: selectedRoomId || currentRoomId })
         });
+        
+        if (!res.ok) {
+            throw new Error(`API Error: ${res.status}`);
+        }
+
         const data = await res.json();
         
         if (data.success) {
@@ -64,9 +72,7 @@ export const useGame = () => {
 
             const mySeat = selectedSeat || currentSeat || Seat.North;
             
-            // Create list of 4 players, placing User in correct slot conceptually, 
-            // but for UI usually User is "Main". 
-            // Let's keep the array order consistent with seat order for scoring ease.
+            // Create list of 4 players
             const newPlayers: Player[] = seatOrder.map(s => getPlayerForSeat(s, s === mySeat));
 
             setPlayers(newPlayers);
@@ -76,15 +82,16 @@ export const useGame = () => {
                 setGameState(GamePhase.Sorting);
             }, 800);
         } else {
-            alert("阶段完成或获取手牌失败");
+            alert(data.error || "阶段完成或获取手牌失败");
             setGameState(GamePhase.Idle);
         }
     } catch (e) {
         console.error("Network error", e);
+        alert("网络错误，请稍后重试");
         setGameState(GamePhase.Idle);
     }
 
-  }, [userPlayerId, currentSeat]);
+  }, [userPlayerId, currentSeat, currentRoomId]);
 
   const handleUserConfirm = useCallback(async (formation: HandFormation) => {
     // 1. Optimistic Update (User)

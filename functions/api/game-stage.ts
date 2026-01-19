@@ -1,4 +1,3 @@
-
 import { Suit, Rank, Card } from '../../types';
 
 interface Env {
@@ -36,116 +35,140 @@ const shuffleAndDeal = () => {
 
 export const onRequestPost = async (context: { request: Request; env: Env }) => {
   const { request, env } = context;
-  const body = await request.json() as any;
-  const { action, userId, roomId, seat, gameId } = body;
+  
+  try {
+      const body = await request.json() as any;
+      const { action, userId, roomId, seat, gameId } = body;
+      const currentRoomId = roomId || 1;
 
-  // --- 1. START STAGE (Join Room) ---
-  if (action === 'start_stage') {
-    // A. Check Inventory & Refill if needed
-    const lastGame = await env.DB.prepare("SELECT MAX(id) as maxId FROM game_decks").first();
-    let currentMax = lastGame?.maxId || 0;
-    
-    if (currentMax < 300) {
-      const statements = [];
-      for (let i = currentMax + 1; i <= 300; i++) {
-        const hands = shuffleAndDeal();
-        const batchId = Math.ceil(i / 10);
-        statements.push(
-          env.DB.prepare("INSERT INTO game_decks (batch_id, north_hand, south_hand, east_hand, west_hand, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-          .bind(batchId, JSON.stringify(hands.N), JSON.stringify(hands.S), JSON.stringify(hands.E), JSON.stringify(hands.W), Date.now())
-        );
-      }
-      if (statements.length > 0) await env.DB.batch(statements);
-    }
+      // --- 1. START STAGE (Join Room) ---
+      if (action === 'start_stage') {
+        // A. Check Inventory & Refill if needed
+        // Use count to see how many games exist for this room
+        const countRes = await env.DB.prepare("SELECT COUNT(*) as count FROM game_decks WHERE room_id = ?").bind(currentRoomId).first();
+        const currentCount = countRes?.count || 0;
+        
+        // If inventory is low (< 100), generate more. 
+        // Optimization: Generate in smaller chunks (e.g. 50) to avoid CPU timeout (Error 500)
+        if (currentCount < 100) {
+          const batchSize = 50; 
+          const statements = [];
+          
+          // Get the max ID just to assign batch_ids roughly, though batch_id logic can be simpler
+          const lastGame = await env.DB.prepare("SELECT MAX(id) as maxId FROM game_decks").first();
+          let nextIdStart = (lastGame?.maxId || 0) + 1;
 
-    // B. Get User Progress
-    let progress = await env.DB.prepare("SELECT * FROM player_progress WHERE user_id = ?").bind(userId).first();
-    
-    if (!progress || progress.current_index >= 10) {
-        const nextBatchId = progress ? (progress.current_batch_start + 1) : 1;
-        
-        const startId = (nextBatchId - 1) * 10 + 1;
-        const endId = nextBatchId * 10;
-        
-        let gameIds = [];
-        for (let i = startId; i <= endId; i++) gameIds.push(i);
-        
-        for (let i = gameIds.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [gameIds[i], gameIds[j]] = [gameIds[j], gameIds[i]];
+          for (let i = 0; i < batchSize; i++) {
+            const hands = shuffleAndDeal();
+            const batchId = Math.ceil((nextIdStart + i) / 10);
+            statements.push(
+              env.DB.prepare("INSERT INTO game_decks (room_id, batch_id, north_hand, south_hand, east_hand, west_hand, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+              .bind(currentRoomId, batchId, JSON.stringify(hands.N), JSON.stringify(hands.S), JSON.stringify(hands.E), JSON.stringify(hands.W), Date.now())
+            );
+          }
+          if (statements.length > 0) await env.DB.batch(statements);
         }
 
-        await env.DB.prepare(`
-            INSERT OR REPLACE INTO player_progress (user_id, current_batch_start, game_sequence_json, current_index, updated_at)
-            VALUES (?, ?, ?, 0, ?)
-        `).bind(userId, nextBatchId, JSON.stringify(gameIds), Date.now()).run();
+        // B. Get User Progress
+        // Note: For this version, progress is global per user. If playing in different rooms, we reset the sequence if needed.
+        let progress = await env.DB.prepare("SELECT * FROM player_progress WHERE user_id = ?").bind(userId).first();
+        
+        // If no progress or finished current batch (index >= 10), start new batch
+        if (!progress || progress.current_index >= 10) {
+            const nextBatchId = progress ? (progress.current_batch_start + 1) : 1;
+            
+            // C. Fetch Game IDs for this batch from the specific Room
+            // We need 10 random game IDs from this room
+            const roomGames = await env.DB.prepare("SELECT id FROM game_decks WHERE room_id = ? ORDER BY RANDOM() LIMIT 10").bind(currentRoomId).all();
+            
+            let gameIds = [];
+            if (roomGames.results && roomGames.results.length > 0) {
+                 gameIds = roomGames.results.map((r: any) => r.id);
+            } else {
+                 // Fallback if DB is empty (shouldn't happen due to step A)
+                 gameIds = [1];
+            }
 
-        progress = { current_batch_start: nextBatchId, game_sequence_json: JSON.stringify(gameIds), current_index: 0 };
-    }
+            // Save new progress
+            await env.DB.prepare(`
+                INSERT OR REPLACE INTO player_progress (user_id, current_batch_start, game_sequence_json, current_index, updated_at)
+                VALUES (?, ?, ?, 0, ?)
+            `).bind(userId, nextBatchId, JSON.stringify(gameIds), Date.now()).run();
 
-    return new Response(JSON.stringify({ 
-        success: true, 
-        batchId: progress.current_batch_start,
-        gamesPlayed: progress.current_index,
-        totalGames: 10
-    }), { status: 200 });
-  }
+            progress = { current_batch_start: nextBatchId, game_sequence_json: JSON.stringify(gameIds), current_index: 0 };
+        }
 
-  // --- 2. GET NEXT HAND ---
-  if (action === 'get_hand') {
-    const progress = await env.DB.prepare("SELECT * FROM player_progress WHERE user_id = ?").bind(userId).first();
-    
-    if (!progress || progress.current_index >= 10) {
-        return new Response(JSON.stringify({ error: "Stage finished or not started" }), { status: 400 });
-    }
+        return new Response(JSON.stringify({ 
+            success: true, 
+            batchId: progress.current_batch_start,
+            gamesPlayed: progress.current_index,
+            totalGames: 10
+        }), { status: 200 });
+      }
 
-    const sequence = JSON.parse(progress.game_sequence_json as string);
-    const targetGameId = sequence[progress.current_index]; 
+      // --- 2. GET NEXT HAND ---
+      if (action === 'get_hand') {
+        const progress = await env.DB.prepare("SELECT * FROM player_progress WHERE user_id = ?").bind(userId).first();
+        
+        if (!progress || progress.current_index >= 10) {
+            return new Response(JSON.stringify({ error: "Stage finished or not started" }), { status: 400 });
+        }
 
-    const gameData = await env.DB.prepare("SELECT * FROM game_decks WHERE id = ?").bind(targetGameId).first(); 
-    
-    let targetHand = [];
-    if (!gameData) {
-         targetHand = shuffleAndDeal().N;
-    } else {
-         let colData = gameData.north_hand;
-         if (seat === 'S') colData = gameData.south_hand;
-         if (seat === 'E') colData = gameData.east_hand;
-         if (seat === 'W') colData = gameData.west_hand;
-         targetHand = JSON.parse(colData as string);
-    }
+        const sequence = JSON.parse(progress.game_sequence_json as string);
+        const targetGameId = sequence[progress.current_index] || sequence[0]; 
 
-    return new Response(JSON.stringify({
-        success: true,
-        gameId: targetGameId,
-        displayId: progress.current_index + 1,
-        hand: targetHand,
-        remaining: 10 - progress.current_index
-    }), { status: 200 });
-  }
+        const gameData = await env.DB.prepare("SELECT * FROM game_decks WHERE id = ?").bind(targetGameId).first(); 
+        
+        let targetHand = [];
+        if (!gameData) {
+            // Emergency fallback
+            targetHand = shuffleAndDeal().N;
+        } else {
+            let colData = gameData.north_hand;
+            if (seat === 'S') colData = gameData.south_hand;
+            if (seat === 'E') colData = gameData.east_hand;
+            if (seat === 'W') colData = gameData.west_hand;
+            try {
+                targetHand = JSON.parse(colData as string);
+            } catch(e) { targetHand = []; }
+        }
 
-  // --- 3. SUBMIT RESULT (REVEAL ALL HANDS) ---
-  if (action === 'submit_result') {
-      if (!gameId) return new Response(JSON.stringify({ error: "Missing gameId" }), { status: 400 });
+        return new Response(JSON.stringify({
+            success: true,
+            gameId: targetGameId,
+            displayId: progress.current_index + 1,
+            hand: targetHand,
+            remaining: 10 - progress.current_index
+        }), { status: 200 });
+      }
 
-      // Fetch the full hands for this game ID so the frontend can calculate scores
-      const gameData = await env.DB.prepare("SELECT north_hand, south_hand, east_hand, west_hand FROM game_decks WHERE id = ?").bind(gameId).first();
+      // --- 3. SUBMIT RESULT (REVEAL ALL HANDS) ---
+      if (action === 'submit_result') {
+          if (!gameId) return new Response(JSON.stringify({ error: "Missing gameId" }), { status: 400 });
 
-      if (!gameData) return new Response(JSON.stringify({ error: "Game not found" }), { status: 404 });
+          // Fetch the full hands for this game ID so the frontend can calculate scores
+          const gameData = await env.DB.prepare("SELECT north_hand, south_hand, east_hand, west_hand FROM game_decks WHERE id = ?").bind(gameId).first();
 
-      // Move pointer forward
-      await env.DB.prepare("UPDATE player_progress SET current_index = current_index + 1 WHERE user_id = ?").bind(userId).run();
+          if (!gameData) return new Response(JSON.stringify({ error: "Game not found" }), { status: 404 });
+
+          // Move pointer forward
+          await env.DB.prepare("UPDATE player_progress SET current_index = current_index + 1 WHERE user_id = ?").bind(userId).run();
+          
+          return new Response(JSON.stringify({ 
+              success: true,
+              hands: {
+                  N: JSON.parse(gameData.north_hand as string),
+                  S: JSON.parse(gameData.south_hand as string),
+                  E: JSON.parse(gameData.east_hand as string),
+                  W: JSON.parse(gameData.west_hand as string)
+              }
+          }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({ error: "Invalid action" }), { status: 400 });
       
-      return new Response(JSON.stringify({ 
-          success: true,
-          hands: {
-              N: JSON.parse(gameData.north_hand as string),
-              S: JSON.parse(gameData.south_hand as string),
-              E: JSON.parse(gameData.east_hand as string),
-              W: JSON.parse(gameData.west_hand as string)
-          }
-      }), { status: 200 });
+  } catch (err: any) {
+      // Catch 500 errors and return JSON
+      return new Response(JSON.stringify({ error: err.message, stack: err.stack }), { status: 500 });
   }
-
-  return new Response("Invalid action", { status: 400 });
 };

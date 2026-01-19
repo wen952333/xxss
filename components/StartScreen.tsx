@@ -1,31 +1,33 @@
-
 import React, { useState } from 'react';
 import { Seat } from '../types';
 
 interface StartScreenProps {
-  onStart: (seat: Seat) => void;
+  onStart: (seat: Seat, roomId: number) => void;
 }
 
 export const StartScreen: React.FC<StartScreenProps> = ({ onStart }) => {
-  const [selectedSeat, setSelectedSeat] = useState<Seat | null>(null);
+  // Store both the selected room/table ID and the seat
+  const [selection, setSelection] = useState<{ roomId: number; seat: Seat } | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleStartGame = () => {
-    if (selectedSeat) {
+    if (selection) {
       setLoading(true);
       // Simulate checking for "at least 2 players" or initialization
       setTimeout(() => {
-        onStart(selectedSeat);
+        onStart(selection.seat, selection.roomId);
         setLoading(false);
       }, 500);
     }
   };
   
-  const SeatButton = ({ position, label, seatValue }: { position: string, label: string, seatValue: Seat }) => {
-    const isSelected = selectedSeat === seatValue;
+  const SeatButton = ({ roomId, position, label, seatValue }: { roomId: number, position: string, label: string, seatValue: Seat }) => {
+    // Check if this specific seat in this specific room is selected
+    const isSelected = selection?.roomId === roomId && selection?.seat === seatValue;
+    
     return (
         <div 
-          onClick={() => setSelectedSeat(seatValue)}
+          onClick={() => setSelection({ roomId, seat: seatValue })}
           className={`absolute ${position} flex flex-col items-center justify-center cursor-pointer group transition-all duration-300 z-20 ${isSelected ? 'scale-110' : 'hover:scale-110'}`}
         >
            {/* Chair / Avatar Placeholder */}
@@ -61,11 +63,11 @@ export const StartScreen: React.FC<StartScreenProps> = ({ onStart }) => {
            </div>
        </div>
 
-       {/* Seats Positions */}
-       <SeatButton position="-top-5 md:-top-7" label="北" seatValue={Seat.North} />
-       <SeatButton position="-bottom-5 md:-bottom-7" label="南" seatValue={Seat.South} />
-       <SeatButton position="-left-5 md:-left-7" label="西" seatValue={Seat.West} />
-       <SeatButton position="-right-5 md:-right-7" label="东" seatValue={Seat.East} />
+       {/* Seats Positions - Pass the Table ID (roomId) to each seat */}
+       <SeatButton roomId={id} position="-top-5 md:-top-7" label="北" seatValue={Seat.North} />
+       <SeatButton roomId={id} position="-bottom-5 md:-bottom-7" label="南" seatValue={Seat.South} />
+       <SeatButton roomId={id} position="-left-5 md:-left-7" label="西" seatValue={Seat.West} />
+       <SeatButton roomId={id} position="-right-5 md:-right-7" label="东" seatValue={Seat.East} />
     </div>
   );
 
@@ -78,7 +80,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({ onStart }) => {
          <div className="text-center mb-8 md:mb-12">
             <h2 className="text-2xl md:text-3xl font-black text-slate-700 tracking-tight">游戏大厅</h2>
             <p className="text-slate-400 text-xs md:text-sm mt-2 font-medium">
-               {selectedSeat ? "点击下方按钮开始匹配" : "请选择空闲座位 (红色代表已选)"}
+               {selection ? "点击下方按钮开始匹配" : "请选择空闲座位 (红色代表已选)"}
             </p>
          </div>
          
@@ -89,7 +91,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({ onStart }) => {
 
          {/* Start Button Area */}
          <div className="mt-12 w-full max-w-xs h-16 relative">
-            {selectedSeat && (
+            {selection && (
                 <button 
                   onClick={handleStartGame}
                   disabled={loading}
@@ -99,7 +101,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({ onStart }) => {
                   {!loading && <span className="text-2xl">➔</span>}
                 </button>
             )}
-            {!selectedSeat && (
+            {!selection && (
                  <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm bg-slate-200/50 rounded-full border border-slate-300 border-dashed">
                     请先点击桌子旁的座位
                  </div>
