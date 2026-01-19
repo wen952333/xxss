@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GamePhase, HandFormation, User } from './types';
 import { HandSorter } from './components/HandSorter';
@@ -10,7 +11,7 @@ import { AuthModal } from './components/AuthModal';
 import { CreditModal } from './components/CreditModal';
 
 const App: React.FC = () => {
-  const { gameState, players, userPlayerId, startNewGame, handleUserConfirm, exitGame } = useGame();
+  const { gameState, players, userPlayerId, startNewGame, handleUserConfirm, exitGame, waitingMessage } = useGame();
   
   // Auth State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -81,13 +82,16 @@ const App: React.FC = () => {
       <main className="flex-1 w-full relative overflow-hidden flex flex-col">
         
         {gameState === GamePhase.Idle ? (
-          <StartScreen onStart={() => {
+          <StartScreen 
+            waitingMessage={waitingMessage}
+            onStart={(seat, roomId) => {
               if(!currentUser) {
                   setShowAuthModal(true);
               } else {
-                  startNewGame();
+                  startNewGame(seat, roomId);
               }
-          }} />
+            }} 
+          />
         ) : (
           <div className="flex flex-col h-full bg-emerald-800 relative shadow-inner">
              {/* Table Texture Overlay */}
@@ -140,7 +144,7 @@ const App: React.FC = () => {
                     <PlayerResults 
                        player={userPlayer} 
                        gameState={gameState} 
-                       onRestart={startNewGame} 
+                       onRestart={() => startNewGame()} 
                     />
                  </div>
                )}

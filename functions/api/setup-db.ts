@@ -33,7 +33,8 @@ interface Env {
 
 export const onRequest = async (context: { env: Env }) => {
   try {
-    // 1. Users Table
+    // 1. Users Table (Keep existing if possible, but for safety in dev we might need to alter it. 
+    // For this demo, we assume users table is fine or we create it if missing)
     await context.env.DB.prepare(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,13 +46,27 @@ export const onRequest = async (context: { env: Env }) => {
       );
     `).run();
 
-    // 2. Game Decks (Inventory of 300 games)
-    // Stores the 4 hands pre-dealt for a specific game ID
+    // 2. Room Players (New Table for Real-time Seating)
+    // We drop it to ensure schema is fresh
+    await context.env.DB.prepare(`DROP TABLE IF EXISTS room_players`).run();
     await context.env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS game_decks (
+      CREATE TABLE room_players (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_id INTEGER NOT NULL,
+        seat TEXT NOT NULL, -- 'N', 'S', 'E', 'W'
+        user_id INTEGER NOT NULL,
+        updated_at INTEGER
+      );
+    `).run();
+
+    // 3. Game Decks (Inventory)
+    // Drop and recreate to ensure room_id column exists
+    await context.env.DB.prepare(`DROP TABLE IF EXISTS game_decks`).run();
+    await context.env.DB.prepare(`
+      CREATE TABLE game_decks (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         room_id INTEGER DEFAULT 1,
-        batch_id INTEGER, -- To group 1-10, 11-20
+        batch_id INTEGER, 
         north_hand TEXT,
         south_hand TEXT,
         east_hand TEXT,
@@ -60,20 +75,19 @@ export const onRequest = async (context: { env: Env }) => {
       );
     `).run();
 
-    // 3. Player Progress (Async Stage Logic)
-    // Tracks which games the player has finished in the current batch
-    // sequence_json stores the shuffled order: "[5, 2, 9, 1...]"
+    // 4. Player Progress
+    await context.env.DB.prepare(`DROP TABLE IF EXISTS player_progress`).run();
     await context.env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS player_progress (
+      CREATE TABLE player_progress (
         user_id INTEGER PRIMARY KEY,
-        current_batch_start INTEGER, -- e.g. 1 (meaning batch 1-10)
-        game_sequence_json TEXT, -- The randomized order of IDs for this user
-        current_index INTEGER, -- Pointer in the sequence (0-9)
+        current_batch_start INTEGER,
+        game_sequence_json TEXT,
+        current_index INTEGER,
         updated_at INTEGER
       );
     `).run();
 
-    return new Response("Database initialized successfully: 'game_decks' and 'player_progress' created.", { status: 200 });
+    return new Response("Database reset and initialized successfully. All tables recreated.", { status: 200 });
   } catch (err: any) {
     return new Response(`Error initializing database: ${err.message}`, { status: 500 });
   }
