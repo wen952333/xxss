@@ -1,27 +1,48 @@
-import React from 'react';
+
+import React, { useState } from 'react';
+import { Seat } from '../types';
 
 interface StartScreenProps {
-  onStart: () => void;
+  onStart: (seat: Seat) => void;
 }
 
 export const StartScreen: React.FC<StartScreenProps> = ({ onStart }) => {
+  const [selectedSeat, setSelectedSeat] = useState<Seat | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleStartGame = () => {
+    if (selectedSeat) {
+      setLoading(true);
+      // Simulate checking for "at least 2 players" or initialization
+      setTimeout(() => {
+        onStart(selectedSeat);
+        setLoading(false);
+      }, 500);
+    }
+  };
   
-  const Seat = ({ position, label, onClick }: { position: string, label: string, onClick: () => void }) => (
-    <div 
-      onClick={onClick}
-      className={`absolute ${position} flex flex-col items-center justify-center cursor-pointer group transition-all duration-300 hover:scale-110 z-20`}
-    >
-       {/* Chair / Avatar Placeholder */}
-       <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-slate-100 border-4 border-slate-300 shadow-lg flex items-center justify-center group-hover:border-blue-500 group-hover:shadow-blue-500/30 transition-colors relative bg-white">
-          <span className="font-bold text-sm text-slate-500 group-hover:text-blue-600">{label}</span>
-          
-          {/* Plus Icon for "Add" */}
-          <div className="absolute -bottom-1 -right-1 w-4 h-4 md:w-5 md:h-5 bg-green-500 rounded-full flex items-center justify-center text-white text-[10px] md:text-xs border-2 border-white opacity-0 group-hover:opacity-100 transition-opacity">
-            +
-          </div>
-       </div>
-    </div>
-  );
+  const SeatButton = ({ position, label, seatValue }: { position: string, label: string, seatValue: Seat }) => {
+    const isSelected = selectedSeat === seatValue;
+    return (
+        <div 
+          onClick={() => setSelectedSeat(seatValue)}
+          className={`absolute ${position} flex flex-col items-center justify-center cursor-pointer group transition-all duration-300 z-20 ${isSelected ? 'scale-110' : 'hover:scale-110'}`}
+        >
+           {/* Chair / Avatar Placeholder */}
+           <div className={`
+                w-12 h-12 md:w-14 md:h-14 rounded-full border-4 shadow-lg flex items-center justify-center transition-colors relative
+                ${isSelected 
+                    ? 'bg-red-500 border-red-600 shadow-red-500/50' 
+                    : 'bg-white border-slate-300 group-hover:border-blue-500'
+                }
+           `}>
+              <span className={`font-bold text-sm ${isSelected ? 'text-white' : 'text-slate-500 group-hover:text-blue-600'}`}>
+                {label}
+              </span>
+           </div>
+        </div>
+      );
+  };
 
   const PokerTable = ({ id, name, stake }: { id: number, name: string, stake: string }) => (
     <div className="relative w-64 h-40 md:w-80 md:h-48 bg-[#5d4037] rounded-xl shadow-2xl flex items-center justify-center mx-6 my-8 border-[6px] border-[#3e2723]">
@@ -41,10 +62,10 @@ export const StartScreen: React.FC<StartScreenProps> = ({ onStart }) => {
        </div>
 
        {/* Seats Positions */}
-       <Seat position="-top-5 md:-top-6" label="北" onClick={onStart} />
-       <Seat position="-bottom-5 md:-bottom-6" label="南" onClick={onStart} />
-       <Seat position="-left-5 md:-left-6" label="西" onClick={onStart} />
-       <Seat position="-right-5 md:-right-6" label="东" onClick={onStart} />
+       <SeatButton position="-top-5 md:-top-7" label="北" seatValue={Seat.North} />
+       <SeatButton position="-bottom-5 md:-bottom-7" label="南" seatValue={Seat.South} />
+       <SeatButton position="-left-5 md:-left-7" label="西" seatValue={Seat.West} />
+       <SeatButton position="-right-5 md:-right-7" label="东" seatValue={Seat.East} />
     </div>
   );
 
@@ -56,12 +77,33 @@ export const StartScreen: React.FC<StartScreenProps> = ({ onStart }) => {
       <div className="z-10 w-full max-w-6xl flex flex-col items-center py-10 px-4">
          <div className="text-center mb-8 md:mb-12">
             <h2 className="text-2xl md:text-3xl font-black text-slate-700 tracking-tight">游戏大厅</h2>
-            <p className="text-slate-400 text-xs md:text-sm mt-2 font-medium">请选择空闲座位开始匹配</p>
+            <p className="text-slate-400 text-xs md:text-sm mt-2 font-medium">
+               {selectedSeat ? "点击下方按钮开始匹配" : "请选择空闲座位 (红色代表已选)"}
+            </p>
          </div>
          
          <div className="flex flex-col lg:flex-row items-center justify-center gap-10 lg:gap-24 w-full">
-            <PokerTable id={1} name="初级场 001" stake="100" />
-            <PokerTable id={2} name="高级场 002" stake="5000" />
+            <PokerTable id={1} name="房间 1" stake="100" />
+            <PokerTable id={2} name="房间 2" stake="5000" />
+         </div>
+
+         {/* Start Button Area */}
+         <div className="mt-12 w-full max-w-xs h-16 relative">
+            {selectedSeat && (
+                <button 
+                  onClick={handleStartGame}
+                  disabled={loading}
+                  className="w-full h-full bg-blue-600 hover:bg-blue-500 text-white text-xl font-bold rounded-full shadow-xl transform transition hover:-translate-y-1 active:scale-95 flex items-center justify-center gap-2 animate-bounce"
+                >
+                  {loading ? '准备牌局中...' : '开始游戏'}
+                  {!loading && <span className="text-2xl">➔</span>}
+                </button>
+            )}
+            {!selectedSeat && (
+                 <div className="w-full h-full flex items-center justify-center text-slate-400 text-sm bg-slate-200/50 rounded-full border border-slate-300 border-dashed">
+                    请先点击桌子旁的座位
+                 </div>
+            )}
          </div>
       </div>
     </div>

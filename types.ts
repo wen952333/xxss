@@ -1,3 +1,4 @@
+
 export enum Suit {
   Spades = '♠',
   Hearts = '♥',
@@ -29,6 +30,13 @@ export interface HandFormation {
   back: Card[]; // 5 cards
 }
 
+export enum Seat {
+  North = 'N',
+  South = 'S',
+  East = 'E',
+  West = 'W'
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -36,6 +44,7 @@ export interface Player {
   hand: Card[]; // The initial 13 cards
   formation?: HandFormation; // The organized hand
   score: number;
+  seat?: Seat; // The specific seat they occupied in the original deal
 }
 
 export interface User {
@@ -43,5 +52,12 @@ export interface User {
   phone: string;
   nickname: string;
   credits: number;
-  token?: string; // Simple session token implementation
+  token?: string;
+}
+
+// Response from API for current game hand
+export interface GameHandResponse {
+  gameId: number; // The visual "Table ID" (1-10, etc)
+  hand: Card[];
+  remainingInStage: number; // How many games left in this set of 10
 }
