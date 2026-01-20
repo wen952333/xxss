@@ -51,20 +51,45 @@ const shuffleAndDeal = () => {
   };
 };
 
+// Helper to auto-create tables if missing
+const ensureTables = async (db: any) => {
+  try {
+    // Check if main table exists
+    await db.prepare("SELECT 1 FROM room_players LIMIT 1").first();
+  } catch (e: any) {
+    // If error indicates missing table, run initialization
+    if (e.message && (e.message.includes("no such table") || e.message.includes("object not found"))) {
+      console.log("Initializing missing tables...");
+      await db.batch([
+        db.prepare(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT UNIQUE NOT NULL, nickname TEXT NOT NULL, password TEXT NOT NULL, credits INTEGER DEFAULT 1000, created_at INTEGER)`),
+        db.prepare(`CREATE TABLE IF NOT EXISTS room_players (id INTEGER PRIMARY KEY AUTOINCREMENT, room_id INTEGER NOT NULL, seat TEXT NOT NULL, user_id INTEGER NOT NULL, updated_at INTEGER)`),
+        db.prepare(`CREATE TABLE IF NOT EXISTS game_decks (id INTEGER PRIMARY KEY AUTOINCREMENT, room_id INTEGER DEFAULT 1, batch_id INTEGER, north_hand TEXT, south_hand TEXT, east_hand TEXT, west_hand TEXT, created_at INTEGER)`),
+        db.prepare(`CREATE TABLE IF NOT EXISTS player_progress (user_id INTEGER PRIMARY KEY, current_batch_start INTEGER, game_sequence_json TEXT, current_index INTEGER, updated_at INTEGER)`)
+      ]);
+    } else {
+        // Rethrow other errors
+        throw e;
+    }
+  }
+};
+
 export const onRequestPost = async (context: { request: Request; env: Env }) => {
   const { request, env } = context;
   
   try {
+      if (!env.DB) {
+          throw new Error("Database binding (DB) not found. Please check Cloudflare settings.");
+      }
+
+      // Try to ensure tables exist before processing
+      await ensureTables(env.DB);
+
       const body = await request.json() as any;
       const { action, userId, roomId, seat, gameId } = body;
       
       const currentRoomId = roomId || 1;
       // Ensure userId is valid, fallback to random if missing (guest)
       const currentUserId = userId || Math.floor(Math.random() * 1000000);
-
-      if (!env.DB) {
-          throw new Error("Database binding (DB) not found. Please check Cloudflare settings.");
-      }
 
       // --- 0. JOIN ROOM ---
       if (action === 'join_room') {
@@ -111,8 +136,8 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
             const deckCountRes = await env.DB.prepare("SELECT COUNT(*) as count FROM game_decks WHERE room_id = ?").bind(currentRoomId).first();
             currentDeckCount = deckCountRes?.count || 0;
         } catch (e) {
-            // Table might not exist
-            return new Response(JSON.stringify({ error: "Database tables missing. Please visit /api/setup-db" }), { status: 500 });
+            // Table might not exist yet if ensureTables failed silently or race condition, force 0
+            currentDeckCount = 0;
         }
         
         if (currentDeckCount < 20) {
