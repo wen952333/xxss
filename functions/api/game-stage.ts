@@ -1,5 +1,15 @@
 
-import { Suit, Rank, Card } from '../../types';
+// --- Inline Types to avoid build resolution issues in Cloudflare Pages Functions ---
+enum Suit {
+  Spades = '♠',
+  Hearts = '♥',
+  Clubs = '♣',
+  Diamonds = '♦'
+}
+
+enum Rank {
+  Two = 2, Three, Four, Five, Six, Seven, Eight, Nine, Ten, Jack, Queen, King, Ace
+}
 
 interface Env {
   DB: any;
@@ -7,12 +17,20 @@ interface Env {
 
 // --- Utils for Deck Generation ---
 const generateDeck = (): any[] => {
-  const suits = ['♠', '♥', '♣', '♦'];
-  const ranks = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+  const suits = [Suit.Spades, Suit.Hearts, Suit.Clubs, Suit.Diamonds];
+  const ranks = [
+    Rank.Two, Rank.Three, Rank.Four, Rank.Five, Rank.Six, Rank.Seven, 
+    Rank.Eight, Rank.Nine, Rank.Ten, Rank.Jack, Rank.Queen, Rank.King, Rank.Ace
+  ];
   const deck: any[] = [];
   suits.forEach(suit => {
     ranks.forEach(rank => {
-      deck.push({ suit, rank, id: `${rank}-${suit}-${Math.random().toString(36).substr(2, 5)}` });
+      // Create a unique ID for each card
+      deck.push({ 
+        suit, 
+        rank, 
+        id: `${rank}-${suit}-${Math.random().toString(36).substr(2, 5)}` 
+      });
     });
   });
   return deck;
@@ -20,6 +38,7 @@ const generateDeck = (): any[] => {
 
 const shuffleAndDeal = () => {
   const deck = generateDeck();
+  // Fisher-Yates Shuffle
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [deck[i], deck[j]] = [deck[j], deck[i]];
@@ -38,23 +57,29 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
   try {
       const body = await request.json() as any;
       const { action, userId, roomId, seat, gameId } = body;
+      
       const currentRoomId = roomId || 1;
-      const currentUserId = userId || 999; 
+      // Ensure userId is valid, fallback to random if missing (guest)
+      const currentUserId = userId || Math.floor(Math.random() * 1000000);
+
+      if (!env.DB) {
+          throw new Error("Database binding (DB) not found. Please check Cloudflare settings.");
+      }
 
       // --- 0. JOIN ROOM ---
       if (action === 'join_room') {
         if (!seat) return new Response(JSON.stringify({ error: "Seat required" }), { status: 400 });
 
-        // Cleanup old session for this user in this room
+        // Cleanup old session for this user in this room to prevent duplicate seats
         await env.DB.prepare("DELETE FROM room_players WHERE room_id = ? AND user_id = ?").bind(currentRoomId, currentUserId).run();
         
-        // Check occupation
+        // Check if seat is taken by someone else
         const taken = await env.DB.prepare("SELECT * FROM room_players WHERE room_id = ? AND seat = ?").bind(currentRoomId, seat).first();
         if (taken) {
             return new Response(JSON.stringify({ success: false, error: "该座位已被占用" }), { status: 200 });
         }
 
-        // Occupy
+        // Occupy seat
         await env.DB.prepare("INSERT INTO room_players (room_id, seat, user_id, updated_at) VALUES (?, ?, ?, ?)")
             .bind(currentRoomId, seat, currentUserId, Date.now()).run();
 
@@ -81,11 +106,17 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
         }
 
         // Check Inventory
-        const deckCountRes = await env.DB.prepare("SELECT COUNT(*) as count FROM game_decks WHERE room_id = ?").bind(currentRoomId).first();
-        const currentDeckCount = deckCountRes?.count || 0;
+        let currentDeckCount = 0;
+        try {
+            const deckCountRes = await env.DB.prepare("SELECT COUNT(*) as count FROM game_decks WHERE room_id = ?").bind(currentRoomId).first();
+            currentDeckCount = deckCountRes?.count || 0;
+        } catch (e) {
+            // Table might not exist
+            return new Response(JSON.stringify({ error: "Database tables missing. Please visit /api/setup-db" }), { status: 500 });
+        }
         
         if (currentDeckCount < 20) {
-          const batchSize = 10; 
+          const batchSize = 5; // Reduced batch size to safely fit in execution limits
           const statements = [];
           const lastGame = await env.DB.prepare("SELECT MAX(id) as maxId FROM game_decks").first();
           let nextIdStart = (lastGame?.maxId || 0) + 1;
@@ -105,13 +136,16 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
         let progress = await env.DB.prepare("SELECT * FROM player_progress WHERE user_id = ?").bind(currentUserId).first();
         if (!progress || progress.current_index >= 10) {
             const nextBatchId = progress ? (progress.current_batch_start + 1) : 1;
+            
+            // Get valid game IDs
             const roomGames = await env.DB.prepare("SELECT id FROM game_decks WHERE room_id = ? ORDER BY RANDOM() LIMIT 10").bind(currentRoomId).all();
             
             let gameIds = [];
             if (roomGames.results && roomGames.results.length > 0) {
                  gameIds = roomGames.results.map((r: any) => r.id);
             } else {
-                 gameIds = [1]; 
+                 // Should imply deck generation failed or race condition
+                 return new Response(JSON.stringify({ error: "Generating decks..." }), { status: 500 });
             }
 
             await env.DB.prepare(`
@@ -181,6 +215,10 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       return new Response(JSON.stringify({ error: "Invalid action" }), { status: 400 });
       
   } catch (err: any) {
-      return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+      // Return JSON error even for 500s so frontend can debug
+      return new Response(JSON.stringify({ error: err.message, stack: err.stack }), { 
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+      });
   }
 };
